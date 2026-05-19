@@ -24,9 +24,7 @@ const isProd = process.env.NODE_ENV === "production"
 // Доверяем одному уровню прокси — этого достаточно для большинства PaaS.
 app.set("trust proxy", 1)
 
-
 app.use(express.json({ limit: "100kb" }))
-
 // В dev фронт работает с другого порта — разрешаем CORS.
 // В проде фронт отдаётся тем же сервером, CORS не нужен.
 if (!isProd) {
@@ -68,12 +66,30 @@ function getTransporter() {
     return null
   }
 
+  const port = Number(SMTP_PORT) || 465
+  // Если SMTP_SECURE задан явно — используем его. Иначе авто: 465 = SSL (true), 587/25 = STARTTLS (false).
+  const secure =
+    SMTP_SECURE !== undefined
+      ? String(SMTP_SECURE).toLowerCase() === "true"
+      : port === 465
+
   transporter = nodemailer.createTransport({
     host: SMTP_HOST,
-    port: Number(SMTP_PORT) || 465,
-    secure: String(SMTP_SECURE).toLowerCase() === "true",
+    port,
+    secure,
     auth: { user: SMTP_USER, pass: SMTP_PASS },
+    // Явные таймауты, чтобы при сетевых проблемах не висеть до бесконечности.
+    connectionTimeout: 15_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 20_000,
   })
+
+  // Один раз проверяем соединение и логируем результат — удобно для дебага на хостинге.
+  transporter.verify().then(
+    () => console.log(`[mail] SMTP ready (${SMTP_HOST}:${port}, secure=${secure})`),
+    (err) => console.error("[mail] SMTP verify failed:", err.message),
+  )
+
   return transporter
 }
 
@@ -164,7 +180,7 @@ app.post("/api/ai/draft", aiLimiter, async (req, res) => {
     if (idea.length < 5 || idea.length > 1000) {
       return res
         .status(400)
-        .json({ ok: false, error: "Идея должна быть длиной 5–1000 символов" })
+        .json({ ok: false, error: "Идея должна б��ть длиной 5–1000 символов" })
     }
 
     const apiKey = process.env.OPENROUTER_API_KEY
@@ -182,7 +198,6 @@ app.post("/api/ai/draft", aiLimiter, async (req, res) => {
       "Пиши на русском, в 2–4 предложениях, по делу, без воды и без приветствий вроде «Здравствуйте».",
       "Не выдумывай факты, опирайся только на идею пользователя.",
       "Возвращай ТОЛЬКО текст комментария, без кавычек и подписей.",
-      "Не отвечай пользователю от своего лица, а сгенерируй текст для отправки разработчику в форме запроса от лица заполняющего форму",
     ].join(" ")
 
     const aiRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -244,7 +259,6 @@ if (fs.existsSync(distDir)) {
   )
 }
 
-
 // Глобальный обработчик ошибок
 app.use((err, _req, res, _next) => {
   console.error("[server] unhandled:", err)
@@ -255,5 +269,5 @@ app.listen(PORT, () => {
   console.log(`[server] listening on http://localhost:${PORT} (${process.env.NODE_ENV || "development"})`)
 })
 
-// Используется только утилитами выше (для тестов при необходимости)
+// Используется только утилитами выше (для тестов при необ��одимости)
 module.exports = { escapeHtml }
