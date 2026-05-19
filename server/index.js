@@ -220,14 +220,22 @@ app.post("/api/ai/draft", aiLimiter, async (req, res) => {
   }
 })
 
-// ---------- Раздача собранного фронта в проде ----------
-if (isProd) {
-  const dist = path.resolve(__dirname, "..", "dist")
-  app.use(express.static(dist))
+// ---------- Раздача собранного фронта ----------
+// Раздаём dist/ всегда, если папка существует (после vite build).
+// Так проще для деплоя на Railway/Render: не зависим от NODE_ENV.
+const fs = require("fs")
+const distDir = path.resolve(__dirname, "..", "dist")
+if (fs.existsSync(distDir)) {
+  app.use(express.static(distDir))
   app.get("*", (_req, res) => {
-    res.sendFile(path.join(dist, "index.html"))
+    res.sendFile(path.join(distDir, "index.html"))
   })
+} else {
+  console.warn(
+    "[server] dist/ not found — фронт не собран. Запустите `npm run build`.",
+  )
 }
+
 
 // Глобальный обработчик ошибок
 app.use((err, _req, res, _next) => {
