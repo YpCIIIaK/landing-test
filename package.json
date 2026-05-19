@@ -1,0 +1,30 @@
+{
+  "name": "dev-landing",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Лендинг-презентация frontend/fullstack разработчика. Стек: TS + SCSS + Vite (front), Node.js + Express (back), AI через OpenRouter.",
+  "scripts": {
+    "dev": "concurrently -n client,server -c blue,green \"npm:dev:client\" \"npm:dev:server\"",
+    "dev:client": "vite",
+    "dev:server": "nodemon server/index.js",
+    "build": "vite build",
+    "preview": "vite preview",
+    "start": "node server/index.js",
+    "start:prod": "NODE_ENV=production node server/index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.4.0",
+    "nodemailer": "^6.9.14"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "concurrently": "^8.2.2",
+    "nodemon": "^3.1.4",
+    "sass": "^1.77.8",
+    "typescript": "^5.5.3",
+    "vite": "^5.3.4"
+  }
+}
