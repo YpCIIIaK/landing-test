@@ -16,7 +16,7 @@
 
 **Backend:**
 - Node.js + Express
-- Nodemailer (отправка писем по SMTP)
+- Отправка почты: **Resend** (через HTTPS API) с **Nodemailer/SMTP** в качестве fallback
 - express-rate-limit (защита от спама)
 - dotenv
 
@@ -66,14 +66,27 @@ npm install
 cp .env.example .env
 \`\`\`
 
-Минимум, что нужно для писем (Nodemailer / SMTP):
+**Вариант A — Resend (рекомендуется для деплоя на Railway/Vercel/Render):**
+\`\`\`
+RESEND_API_KEY=re_xxxxxxxxxxxxxxxx
+MAIL_FROM=Dev Landing <onboarding@resend.dev>
+OWNER_EMAIL=ваш_email@gmail.com
+\`\`\`
+
+Получить ключ: https://resend.com → Sign up → API Keys → Create API Key. Бесплатно 3000 писем/месяц.
+
+> **Важно про адрес отправителя:** Resend не разрешает слать письма с `@gmail.com` или другого непроверенного домена. На бесплатном тарифе используйте их sandbox-адрес `onboarding@resend.dev` — он работает без настройки. Для продакшена нужно подключить свой домен (Resend → Domains → Add Domain → добавить SPF/DKIM-записи у регистратора), после чего можно слать с `noreply@вашдомен.com`.
+>
+> **Ограничение sandbox-режима:** письма с `onboarding@resend.dev` доходят **только на тот email, на который вы регистрировали аккаунт Resend**. Поэтому письмо владельцу (`OWNER_EMAIL`) приходит, а копия пользователю на любой левый email — нет (Resend её отклонит). Это нормальное поведение тестового домена. После подключения своего домена ограничение снимается.
+
+**Вариант B — SMTP / Nodemailer (для VPS или локальной разработки):**
 \`\`\`
 SMTP_HOST=smtp.gmail.com
-SMTP_PORT=465
+SMTP_PORT=587
 SMTP_SECURE=true
 SMTP_USER=ваш_email@gmail.com
-SMTP_PASS=app_password         # для Gmail — App Password, не обычный пароль
-MAIL_FROM="Dev Landing <ваш_email@gmail.com>"
+SMTP_PASS=app_password           # для Gmail — App Password, не обычный пароль
+MAIL_FROM="Dev Landing <ваш_email@gmail.com>" в случае ресенда ставим <onboarding@resend.dev>
 OWNER_EMAIL=ваш_email@gmail.com
 \`\`\`
 
