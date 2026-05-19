@@ -47,27 +47,24 @@ const aiLimiter = rateLimit({
   message: { ok: false, error: "Слишком много AI-запросов. Подождите немного." },
 })
 
-// ---------- Транспорт почты ----------
+// ---------- Отправка почты ----------
+// Поддерживаем два провайдера:
+//   1) Resend (через HTTPS API) — работает на любых PaaS (Railway, Vercel и т.д.),
+//      потому что не требует исходящих SMTP-портов. Активируется заданием RESEND_API_KEY.
+//   2) Nodemailer/SMTP — fallback для VPS/локалки, где SMTP-порты открыты.
+const MAIL_PROVIDER = process.env.RESEND_API_KEY ? "resend" : "smtp"
+
 let transporter = null
-function getTransporter() {
+function getSmtpTransporter() {
   if (transporter) return transporter
-  const {
-    SMTP_HOST,
-    SMTP_PORT,
-    SMTP_SECURE,
-    SMTP_USER,
-    SMTP_PASS,
-  } = process.env
+  const { SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASS } = process.env
 
   if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
-    console.warn(
-      "[mail] SMTP не настроен — письма отправляться не будут. Заполните .env (см. .env.example).",
-    )
+    console.warn("[mail] SMTP не настроен и RESEND_API_KEY не задан — письма не отправляются.")
     return null
   }
 
   const port = Number(SMTP_PORT) || 465
-  // Если SMTP_SECURE задан явно — используем его. Иначе авто: 465 = SSL (true), 587/25 = STARTTLS (false).
   const secure =
     SMTP_SECURE !== undefined
       ? String(SMTP_SECURE).toLowerCase() === "true"
@@ -78,13 +75,11 @@ function getTransporter() {
     port,
     secure,
     auth: { user: SMTP_USER, pass: SMTP_PASS },
-    // Явные таймауты, чтобы при сетевых проблемах не висеть до бесконечности.
     connectionTimeout: 15_000,
     greetingTimeout: 10_000,
     socketTimeout: 20_000,
   })
 
-  // Один раз проверяем соединение и логируем результат — удобно для дебага на хостинге.
   transporter.verify().then(
     () => console.log(`[mail] SMTP ready (${SMTP_HOST}:${port}, secure=${secure})`),
     (err) => console.error("[mail] SMTP verify failed:", err.message),
@@ -92,6 +87,38 @@ function getTransporter() {
 
   return transporter
 }
+
+// Универсальная отправка письма. Сама выбирает провайдера.
+async function sendMail({ from, to, replyTo, subject, text, html }) {
+  if (MAIL_PROVIDER === "resend") {
+    const r = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+      },
+      body: JSON.stringify({
+        from,
+        to: [to],
+        subject,
+        text,
+        html,
+        ...(replyTo ? { reply_to: replyTo } : {}),
+      }),
+    })
+    if (!r.ok) {
+      const errText = await r.text().catch(() => "")
+      throw new Error(`Resend HTTP ${r.status}: ${errText}`)
+    }
+    return r.json()
+  }
+
+  const tr = getSmtpTransporter()
+  if (!tr) throw new Error("Mail transport not configured")
+  return tr.sendMail({ from, to, replyTo, subject, text, html })
+}
+
+console.log(`[mail] provider = ${MAIL_PROVIDER}`)
 
 // ---------- Health ----------
 app.get("/api/health", (_req, res) => {
@@ -113,17 +140,14 @@ app.post("/api/contact", formLimiter, async (req, res) => {
       return res.status(400).json({ ok: false, errors })
     }
 
-    const tr = getTransporter()
     const ownerEmail = process.env.OWNER_EMAIL
     const from = process.env.MAIL_FROM || process.env.SMTP_USER
 
-    if (!tr || !ownerEmail || !from) {
-      // Если SMTP не настроен — логируем заявку и говорим клиенту, что что-то не так на сервере.
-      console.warn("[contact] SMTP/OWNER_EMAIL не настроены. Заявка:", data)
+    if (!ownerEmail || !from) {
+      console.warn("[contact] OWNER_EMAIL / MAIL_FROM не настроены. Заявка:", data)
       return res.status(500).json({
         ok: false,
-        error:
-          "Сервер не настроен для отправки писем. Заявка сохранена в логах.",
+        error: "Сервер не настроен для отправки писем. Заявка сохранена в логах.",
       })
     }
 
@@ -145,11 +169,9 @@ app.post("/api/contact", formLimiter, async (req, res) => {
       html: buildUserEmail(data, "html"),
     }
 
-    // Отправляем параллельно. Если падает копия пользователю — это не критично,
-    // главное что письмо владельцу ушло.
     const [ownerResult, userResult] = await Promise.allSettled([
-      tr.sendMail(ownerMail),
-      tr.sendMail(userMail),
+      sendMail(ownerMail),
+      sendMail(userMail),
     ])
 
     if (ownerResult.status === "rejected") {
@@ -245,7 +267,7 @@ app.post("/api/ai/draft", aiLimiter, async (req, res) => {
 
 // ---------- Раздача собранного фронта ----------
 // Раздаём dist/ всегда, если папка существует (после vite build).
-// Так проще для деплоя на Railway/Render: не зависим от NODE_ENV.
+// Так ��роще для деплоя на Railway/Render: не зависим от NODE_ENV.
 const fs = require("fs")
 const distDir = path.resolve(__dirname, "..", "dist")
 if (fs.existsSync(distDir)) {
