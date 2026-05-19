@@ -19,7 +19,14 @@ const app = express()
 const PORT = process.env.PORT || 3001
 const isProd = process.env.NODE_ENV === "production"
 
+// Railway/Render/Fly работают за обратным прокси и подставляют X-Forwarded-For.
+// Без trust proxy express-rate-limit падает с ERR_ERL_UNEXPECTED_X_FORWARDED_FOR.
+// Доверяем одному уровню прокси — этого достаточно для большинства PaaS.
+app.set("trust proxy", 1)
+
+
 app.use(express.json({ limit: "100kb" }))
+
 // В dev фронт работает с другого порта — разрешаем CORS.
 // В проде фронт отдаётся тем же сервером, CORS не нужен.
 if (!isProd) {
